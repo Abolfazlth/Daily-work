@@ -1,144 +1,287 @@
-<!DOCTYPE html>
-<html lang="fa">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>My Study Room - پیشرفته نمودار</title>
-<style>
-body { font-family:'Tahoma',sans-serif; margin:0; padding:0; background:#f0f0f0; color:#333; transition:0.3s; }
-header { background:#4CAF50; color:white; padding:1rem; text-align:center; display:flex; justify-content:space-between; align-items:center; }
-main { display:flex; height:calc(100vh - 60px); }
-nav { width:220px; background:#2E7D32; padding:1rem; display:flex; flex-direction:column; gap:10px; }
-nav button { background:#66BB6A; border:none; color:white; padding:0.5rem; cursor:pointer; transition:0.2s; }
-nav button:hover { background:#81C784; }
-section { flex:1; padding:1rem; overflow-y:auto; }
-.task { background:white; padding:10px; margin-bottom:10px; border-radius:5px; box-shadow:0 0 5px rgba(0,0,0,0.2); cursor:pointer; }
-.task.done { background:#d0ffd0; text-decoration:line-through; }
-.theme-dark { background:#121212; color:white; }
-.theme-dark nav { background:#1E1E1E; }
-.theme-dark nav button { background:#333; }
-.theme-classic { background:#e0f7fa; color:#00695c; }
-.theme-classic nav { background:#004d40; }
-.theme-classic nav button { background:#00796b; }
-.video-container { margin:10px 0; }
-.chat-box { border:1px solid #ccc; padding:10px; height:200px; overflow-y:auto; background:white; }
-.chat-input { width:100%; padding:5px; margin-top:5px; }
-.category-select { margin-bottom:10px; }
-.progress-container { background:#ccc; width:100%; border-radius:5px; overflow:hidden; margin:10px 0; }
-.progress-bar { background:#4CAF50; height:20px; width:0%; transition:0.3s; }
-</style>
-</head>
-<body>
-<header>
-  <span>اتاق مطالعه من</span>
-  <div>
-    <button onclick="toggleTheme()">تغییر تم</button>
-    <select id="themeSelect" onchange="changeTheme(this.value)">
-      <option value="default">پیش‌فرض</option>
-      <option value="dark">تاریک</option>
-      <option value="classic">سبز کلاسیک</option>
-    </select>
-  </div>
-</header>
-<main>
-<nav>
-  <button onclick="showSection('tasks')">برنامه روزانه</button>
-  <button onclick="showSection('videos')">فیلم‌ها</button>
-  <button onclick="showSection('chat')">دستیار هوشمند</button>
-  <button onclick="showSection('progress')">پیشرفت</button>
-</nav>
+import React, { useState, useEffect, useRef } from "react";
+import { SafeAreaView, View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, ScrollView, Alert, StatusBar } from "react-native";
+import Constants from "expo-constants";
+import { StatusBar as ExpoStatusBar } from "expo-status-bar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Audio } from "expo-av";
 
-<section id="tasks" style="display:block;">
-  <h2>برنامه روزانه</h2>
-  <input type="text" id="newTask" placeholder="کار جدید">
-  <select id="taskCategory" class="category-select">
-    <option value="درس">درس</option>
-    <option value="ورزش">ورزش</option>
-    <option value="تفریح">تفریح</option>
-  </select>
-  <button onclick="addTask()">اضافه کردن</button>
-  <div id="taskList"></div>
-</section>
+// === Main App ===
+export default function App() {
+  const [view, setView] = useState("home"); // home | tasks | stats
+  const [tasks, setTasks] = useState([]);
+  const [sessions, setSessions] = useState([]);
 
-<section id="videos" style="display:none;">
-  <h2>فیلم‌های آموزشی</h2>
-  <input type="text" id="newVideo" placeholder="لینک ویدئو">
-  <select id="videoCategory" class="category-select">
-    <option value="درس">درس</option>
-    <option value="ورزش">ورزش</option>
-    <option value="تفریح">تفریح</option>
-  </select>
-  <button onclick="addVideo()">اضافه کردن</button>
-  <div id="videoList"></div>
-</section>
+  useEffect(() => {
+    (async () => {
+      const t = await AsyncStorage.getItem("@msr_tasks");
+      const s = await AsyncStorage.getItem("@msr_sessions");
+      if (t) setTasks(JSON.parse(t));
+      if (s) setSessions(JSON.parse(s));
+    })();
+  }, []);
 
-<section id="chat" style="display:none;">
-  <h2>چت با دستیار هوشمند</h2>
-  <div class="chat-box" id="chatBox"></div>
-  <input type="text" id="chatInput" class="chat-input" placeholder="پیام خود را بنویسید">
-  <button onclick="sendMessage()">ارسال</button>
-</section>
+  useEffect(() => {
+    AsyncStorage.setItem("@msr_tasks", JSON.stringify(tasks));
+  }, [tasks]);
 
-<section id="progress" style="display:none;">
-  <h2>پیشرفت مطالعه</h2>
-  <canvas id="progressChart" width="400" height="200"></canvas>
-  <div class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
-  <div id="progressText"></div>
-</section>
+  useEffect(() => {
+    AsyncStorage.setItem("@msr_sessions", JSON.stringify(sessions));
+  }, [sessions]);
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-let theme='default';
-function toggleTheme(){ theme=(theme==='dark'?'default':'dark'); applyTheme(); }
-function changeTheme(val){ theme=val; applyTheme(); }
-function applyTheme(){ document.body.className=theme==='dark'?'theme-dark':(theme==='classic'?'theme-classic':''); }
+  const addSession = (minutes) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setSessions((prev) => {
+      const copy = [...prev];
+      const idx = copy.findIndex((p) => p.date === today);
+      if (idx >= 0) copy[idx].minutes += minutes;
+      else copy.push({ date: today, minutes });
+      return copy;
+    });
+  };
 
-function showSection(id){ document.querySelectorAll('main section').forEach(s=>s.style.display='none'); document.getElementById(id).style.display='block'; }
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar hidden />
+      <View style={styles.header}>
+        <Text style={styles.title}>My Study Room</Text>
+        <View style={styles.nav}>
+          <TouchableOpacity onPress={() => setView("home")} style={styles.navBtn}>
+            <Text style={styles.navTxt}>خانه</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setView("tasks")} style={styles.navBtn}>
+            <Text style={styles.navTxt}>تسک‌ها</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setView("stats")} style={styles.navBtn}>
+            <Text style={styles.navTxt}>آمار</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-function saveData(key,val){ localStorage.setItem(key,JSON.stringify(val)); }
-function loadData(key){ return JSON.parse(localStorage.getItem(key)||'[]'); }
+      <View style={styles.body}>
+        {view === "home" && (
+          <>
+            <Timer onSessionComplete={(minutes) => addSession(minutes)} tasks={tasks} />
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ textAlign: "center", color: "#666" }}>
+                جلسات امروز:{" "}
+                {sessions.find((s) => s.date === new Date().toISOString().slice(0, 10))?.minutes || 0} دقیقه
+              </Text>
+            </View>
+          </>
+        )}
+        {view === "tasks" && <Tasks tasks={tasks} setTasks={setTasks} />}
+        {view === "stats" && <Stats sessions={sessions} />}
+      </View>
 
-function addTask(){
-  let val=document.getElementById('newTask').value.trim();
-  let cat=document.getElementById('taskCategory').value;
-  if(!val) return;
-  let tasks=loadData('tasks');
-  tasks.push({text:val, category:cat, done:false, time:new Date().toISOString()});
-  saveData('tasks',tasks);
-  document.getElementById('newTask').value='';
-  renderTasks(); updateProgress(); checkAI(); renderChart();
-}
-function renderTasks(){
-  let tasks=loadData('tasks'); let container=document.getElementById('taskList'); container.innerHTML='';
-  tasks.forEach((t,i)=>{ let div=document.createElement('div'); div.className='task'+(t.done?' done':''); div.textContent=`[${t.category}] ${t.text}`; div.onclick=()=>{ t.done=!t.done; saveData('tasks',tasks); renderTasks(); updateProgress(); checkAI(); renderChart(); }; container.appendChild(div); });
-}
-renderTasks();
-
-function addVideo(){
-  let val=document.getElementById('newVideo').value.trim();
-  let cat=document.getElementById('videoCategory').value;
-  if(!val) return;
-  let videos=loadData('videos'); videos.push({url:val, category:cat}); saveData('videos',videos); document.getElementById('newVideo').value=''; renderVideos();
-}
-function renderVideos(){
-  let videos=loadData('videos'); let container=document.getElementById('videoList'); container.innerHTML='';
-  videos.forEach(v=>{ let div=document.createElement('div'); div.className='video-container'; div.innerHTML=`<strong>[${v.category}]</strong><video width="320" height="200" controls><source src="${v.url}" type="video/mp4"> مرورگر شما از ویدئو پشتیبانی نمی‌کند.</video>`; container.appendChild(div); });
-}
-renderVideos();
-
-function sendMessage(){
-  let input=document.getElementById('chatInput'); let msg=input.value.trim(); if(!msg) return;
-  let box=document.getElementById('chatBox'); let userDiv=document.createElement('div'); userDiv.textContent='شما: '+msg; box.appendChild(userDiv);
-  let reply=document.createElement('div'); reply.textContent='دستیار: '+generateReply(msg); box.appendChild(reply); input.value=''; box.scrollTop=box.scrollHeight;
+      <ExpoStatusBar style="auto" />
+    </SafeAreaView>
+  );
 }
 
-function generateReply(msg){
-  msg=msg.toLowerCase(); let tasks=loadData('tasks'); let undone=tasks.filter(t=>!t.done);
-  if(msg.includes('سلام')) return 'سلام! امروز برنامه ات را مرور کردی؟';
-  if(msg.includes('پیشنهاد')) return undone.length? `توصیه: ${undone[0].text} را انجام بده.`:'تمام کارها انجام شده!';
-  if(msg.includes('اخطار')) return undone.length? 'یادت باشد زمان مطالعه و استراحت را رعایت کنی!':'همه کارها انجام شده.';
-  if(msg.includes('کار بعدی')) return undone.length? 'کار بعدی: '+undone[0].text:'تمام کارها انجام شده!';
-  return 'متوجه شدم: '+msg;
+// === Timer Component ===
+function Timer({ onSessionComplete, tasks }) {
+  const [minutes, setMinutes] = useState("25");
+  const [running, setRunning] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+  const intervalRef = useRef(null);
+  const soundRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (soundRef.current) soundRef.current.unloadAsync();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!running) return;
+    intervalRef.current = setInterval(() => {
+      setRemaining((r) => {
+        if (r <= 1) {
+          clearInterval(intervalRef.current);
+          setRunning(false);
+          playSound();
+          onSessionComplete(parseInt(minutes || "0"));
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    return () => clearInterval(intervalRef.current);
+  }, [running]);
+
+  const start = () => {
+    const m = parseInt(minutes || "0");
+    if (!m || m <= 0) return Alert.alert("مدت نامعتبر", "لطفاً دقیقه درست وارد کن.");
+    setRemaining(m * 60);
+    setRunning(true);
+  };
+
+  const stop = () => {
+    setRunning(false);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  };
+
+  const playSound = async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(require("./assets/calm.mp3"));
+      soundRef.current = sound;
+      await sound.playAsync();
+    } catch (e) {
+      // اگه فایل نبود نادیده بگیر
+    }
+  };
+
+  const formatTime = (s) => {
+    const mm = Math.floor(s / 60).toString().padStart(2, "0");
+    const ss = (s % 60).toString().padStart(2, "0");
+    return `${mm}:${ss}`;
+  };
+
+  return (
+    <View style={card.card}>
+      <Text style={card.heading}>تایمر مطالعه</Text>
+      <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center" }}>
+        <TextInput
+          keyboardType="numeric"
+          value={minutes}
+          onChangeText={setMinutes}
+          style={card.input}
+          placeholder="دقیقه"
+        />
+        <TouchableOpacity onPress={start} style={card.btn}>
+          <Text style={card.btnTxt}>شروع</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={stop} style={[card.btn, { backgroundColor: "#bbb" }]}>
+          <Text style={card.btnTxt}>توقف</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ marginTop: 16, alignItems: "center" }}>
+        <Text style={card.time}>
+          {running ? formatTime(remaining) : `${minutes.padStart(2, "0")}:00`}
+        </Text>
+      </View>
+
+      <View style={{ marginTop: 14 }}>
+        <Text style={{ fontWeight: "600" }}>تسک‌های اخیر</Text>
+        {tasks.length === 0 ? (
+          <Text style={{ color: "#666", marginTop: 6 }}>هنوز تسکی وجود نداره</Text>
+        ) : (
+          tasks.slice(0, 3).map((t, i) => (
+            <Text key={i} style={{ marginTop: 6 }}>
+              • {t.title} {t.done ? "(تمام شده)" : ""}
+            </Text>
+          ))
+        )}
+      </View>
+    </View>
+  );
 }
 
-function checkAI(){ let tasks=loadData('tasks'); let undone=tasks.filter(t=>!t.done); if(undone.length){ let box=document
+// === Tasks Component ===
+function Tasks({ tasks, setTasks }) {
+  const [title, setTitle] = useState("");
+
+  const add = () => {
+    if (!title.trim()) return Alert.alert("خالی است", "عنوان تسک را وارد کنید.");
+    setTasks((prev) => [{ id: Date.now().toString(), title: title.trim(), done: false }, ...prev]);
+    setTitle("");
+  };
+
+  const toggle = (id) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  };
+
+  const removeDone = () => {
+    setTasks((prev) => prev.filter((t) => !t.done));
+  };
+
+  return (
+    <View>
+      <Text style={card.heading}>تسک‌ها</Text>
+      <View style={{ flexDirection: "row", marginTop: 8 }}>
+        <TextInput value={title} onChangeText={setTitle} placeholder="عنوان تسک..." style={card.inputFlex} />
+        <TouchableOpacity onPress={add} style={card.addBtn}>
+          <Text style={{ color: "#fff" }}>اضافه</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        style={{ marginTop: 12 }}
+        data={tasks}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => toggle(item.id)} style={card.taskRow}>
+            <Text style={{ textDecorationLine: item.done ? "line-through" : "none" }}>{item.title}</Text>
+            <Text>{item.done ? "✅" : "⬜"}</Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={<Text style={{ color: "#666", marginTop: 10 }}>هیچ تسکی اضافه نشده</Text>}
+      />
+
+      <TouchableOpacity onPress={removeDone} style={{ marginTop: 12, alignSelf: "center", padding: 8 }}>
+        <Text style={{ color: "#d00" }}>حذف تمام‌شده‌ها</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// === Stats Component ===
+function Stats({ sessions }) {
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const s = sessions.find((x) => x.date === dateStr);
+    last7.push({ date: dateStr, minutes: s ? s.minutes : 0 });
+  }
+  const total = last7.reduce((a, b) => a + b.minutes, 0);
+
+  return (
+    <ScrollView>
+      <Text style={card.heading}>آمار هفت روز اخیر</Text>
+      <View style={{ marginTop: 12 }}>
+        {last7.map((d, i) => (
+          <View key={i} style={card.statRow}>
+            <Text style={{ width: 100 }}>{d.date.slice(5)}</Text>
+            <View style={card.barWrapper}>
+              <View style={[card.bar, { width: Math.min(300, d.minutes * 3) }]} />
+            </View>
+            <Text style={{ width: 60, textAlign: "right" }}>{d.minutes} min</Text>
+          </View>
+        ))}
+      </View>
+      <View style={{ marginTop: 16 }}>
+        <Text style={{ fontWeight: "700" }}>کل دقیقه در ۷ روز: {total} دقیقه</Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// === Styles ===
+const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: Constants.statusBarHeight, backgroundColor: "#f7f7f8" },
+  header: { padding: 16, borderBottomWidth: 1, borderColor: "#eee" },
+  title: { fontSize: 18, fontWeight: "700", textAlign: "center" },
+  nav: { flexDirection: "row", justifyContent: "space-around", marginTop: 12 },
+  navBtn: { padding: 8 },
+  navTxt: { color: "#007aff", fontWeight: "600" },
+  body: { flex: 1, padding: 16 }
+});
+
+const card = StyleSheet.create({
+  card: { backgroundColor: "#fff", padding: 14, borderRadius: 10, shadowColor: "#00000011", elevation: 2 },
+  heading: { fontSize: 16, fontWeight: "700" },
+  input: { borderWidth: 1, borderColor: "#ddd", padding: 8, width: 80, marginRight: 8, borderRadius: 6, textAlign: "center" },
+  inputFlex: { flex: 1, borderWidth: 1, borderColor: "#ddd", borderRadius: 6, padding: 8 },
+  btn: { backgroundColor: "#007aff", padding: 10, borderRadius: 6, marginLeft: 8 },
+  btnTxt: { color: "#fff", fontWeight: "700" },
+  time: { fontSize: 36, fontWeight: "800" },
+  addBtn: { marginLeft: 8, backgroundColor: "#28a745", padding: 10, borderRadius: 6 },
+  taskRow: { flexDirection: "row", justifyContent: "space-between", padding: 10, backgroundColor: "#fff", marginBottom: 8, borderRadius: 8 },
+  statRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  barWrapper: { flex: 1, height: 14, backgroundColor: "#eee", borderRadius: 8, marginHorizontal: 8 },
+  bar: { height: 14, backgroundColor: "#007aff", borderRadius: 8 }
+});
